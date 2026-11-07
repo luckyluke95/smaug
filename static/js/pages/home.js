@@ -9,124 +9,83 @@ import {
   showMessage,
 } from "../ui.js";
 
-const { groups = [], isAdmin = false } = readPageData();
+const pageData = readPageData();
+const groups = Array.isArray(pageData.groups) ? pageData.groups : [];
+const isAdmin = pageData.isAdmin === true;
 const formList = document.getElementById("formList");
 const formSearch = document.getElementById("formSearch");
-const expansion = document.getElementById("domain-expansion");
 const domainIdle = document.getElementById("domain-idle");
 const domainContent = document.getElementById("domain-content");
 const closeDomainButton = document.getElementById("closeDomain");
 const allFormsButton = document.getElementById("showAllForms");
-const expandedDomainTitle = document.getElementById("expanded-domain-title");
+const expandedGroupTitle = document.getElementById("expanded-group-title");
 const resetFilters = document.getElementById("resetFilters");
 const globalSearch = document.getElementById("globalSearch");
-const noGroup = document.getElementById("no-user-group");
 const count = document.getElementById("availableCount");
-const domainCards = [...document.querySelectorAll("[data-category]")];
+const groupCards = [...document.querySelectorAll("[data-group-id]")];
 
-// Les formulaires proviennent des groupes de l'utilisateur via l'API SMAUG.
-// Le classement en modules n'accorde aucun droit nouveau.
 const tabs = groups.map((group) => ({
-  id: String(group.id), name: group.name, listKey: "with_group", forms: [],
+  id: String(group.id), name: group.name, listKey: "with_group", forms: [], loading: true, failed: false,
 }));
 if (isAdmin) {
-  tabs.push({ id: "None", name: "Sans groupe", listKey: "without_group", forms: [] });
+  tabs.push({ id: "None", name: "Sans groupe", listKey: "without_group", forms: [], loading: true, failed: false });
 }
 
 const normalize = (value) => String(value ?? "")
   .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-// Le module sert UNIQUEMENT au classement visuel, jamais aux autorisations.
-// Pour lever une ambiguïté, renseigner l'identité stable "branche:chemin" ici.
-// Les droits restent dans les groupes associés aux formulaires dans SMAUG.
-const FORM_MODULE_OVERRIDES = Object.freeze({
-  // "main:.forms/mon_formulaire.yaml": "genetique",
-});
 
-// En attendant un éventuel champ 'module' optionnel dans le référentiel YAML,
-// cette correspondance explicite + règles prudentes évite de changer le backend.
-// Un formulaire non reconnu reste visible dans "Outils et autres analyses".
-const MODULE_RULES = [
-  { id: "demultiplexage", pattern: /demultiplex|demux|demul|bcl[ _-]?convert/ },
-  { id: "immunologie", pattern: /immunolog|immuno|typ[ae]ge[ _-]?hla|hla|tcr|bcr/ },
-  { id: "onco", pattern: /onco|somatiqu|hematolog|hemato|leucemi|lymphom|cancer/ },
-  { id: "genetique", pattern: /genetiqu|constitutionnel|germinal|panel|nanopore|wes|wgs|exom|genom|variant/ },
-  { id: "outils", pattern: /transfert|copie|copy|rsync|fichier|controle[ _-]?qualite|qc|fastq/ },
-];
-function moduleForForm(form) {
-  const formId = `${form.branch ?? ""}:${form.file_path ?? ""}`;
-  const explicit = FORM_MODULE_OVERRIDES[formId];
-  if (explicit && domainCards.some((card) => card.dataset.category === explicit)) return explicit;
-  // Priorité aux noms et chemins. La description n'est qu'un dernier recours.
-  const mainText = normalize(`${form.name ?? ""} ${form.file_path ?? ""}`);
-  const descText = normalize(form.description ?? "");
-  for (const text of [mainText, descText]) {
-    const matching = MODULE_RULES.find((rule) => rule.pattern.test(text));
-    if (matching) return matching.id;
-  }
-  return "outils";
-}
-
-function syncDomainCards() {
-  const visible = new Set(accessibleForms().map(({ form }) => moduleForForm(form)));
-  for (const card of domainCards) card.hidden = !visible.has(card.dataset.category);
-  if (activeDomain && activeDomain !== "all" && !visible.has(activeDomain)) setActiveDomain(null);
-  const hint = domainIdle?.querySelector("p");
-  if (hint && visible.size === 0) {
-    hint.textContent = failedGroups
-      ? "Impossible de charger certains groupes. Réessayez ou contactez votre administrateur."
-      : "Aucune analyse ne vous est attribuée. Contactez votre administrateur.";
-  }
-}
-
-let activeDomain = null; // À l’ouverture, aucune liste ne masque le suivi des analyses.
+let activeGroup = null;
 let failedGroups = 0;
 
-// Le clic ouvre un panneau accordéon sous les cartes, sans deuxième sélecteur.
-// Ceci est seulement une présentation : l'API conserve le contrôle des droits.
-function setupDomainDisclosure() {
-  for (const card of domainCards) {
-    card.addEventListener("click", () => {
-      const next = activeDomain === card.dataset.category ? null : card.dataset.category;
-      setActiveDomain(next);
-    });
-  }
-  allFormsButton?.addEventListener("click", () => {
-    setActiveDomain(activeDomain === "all" ? null : "all");
-  });
-  closeDomainButton?.addEventListener("click", () => setActiveDomain(null));
+function updateGroupCard(tab) {
+  const card = groupCards.find((item) => item.dataset.groupId === tab.id);
+  const label = card?.querySelector("[data-group-count]");
+  if (!label) return;
+  if (tab.loading) label.textContent = "Chargement…";
+  else if (tab.failed) label.textContent = "Indisponible";
+  else if (tab.forms.length === 0) label.textContent = "Aucune analyse";
+  else label.textContent = `${tab.forms.length} analyse${tab.forms.length === 1 ? "" : "s"}`;
 }
 
-function setActiveDomain(domain) {
-  const valid = domain === "all" || domainCards.some((card) => !card.hidden && card.dataset.category === domain);
-  const nextDomain = valid ? domain : null;
-  if (nextDomain !== activeDomain) {
-    // Ne pas conserver un ancien filtre texte lorsqu'on change de domaine.
+function setActiveGroup(groupId) {
+  const valid = groupId === "all" || tabs.some((tab) => tab.id === groupId);
+  const nextGroup = valid ? groupId : null;
+  if (nextGroup !== activeGroup) {
     formSearch.value = "";
     if (globalSearch) globalSearch.value = "";
   }
-  activeDomain = nextDomain;
-  const isOpen = activeDomain !== null;
+  activeGroup = nextGroup;
+  const isOpen = activeGroup !== null;
   domainIdle.hidden = isOpen;
   domainContent.hidden = !isOpen;
-  for (const card of domainCards) {
-    card.setAttribute("aria-expanded", String(card.dataset.category === activeDomain));
+  for (const card of groupCards) {
+    card.setAttribute("aria-expanded", String(card.dataset.groupId === activeGroup));
   }
-  allFormsButton?.setAttribute("aria-expanded", String(activeDomain === "all"));
+  allFormsButton?.setAttribute("aria-expanded", String(activeGroup === "all"));
   if (!isOpen) {
-    // Effacer la recherche cachée évite qu'elle affecte une prochaine ouverture.
     formSearch.value = "";
     if (globalSearch) globalSearch.value = "";
     return;
   }
-  const card = domainCards.find((item) => item.dataset.category === activeDomain);
-  const domainName = card?.querySelector("strong")?.textContent.trim();
-  setText(expandedDomainTitle,
-    activeDomain === "all" ? "Toutes les analyses disponibles" : `Analyses · ${domainName ?? "Domaine"}`);
+  const tab = tabs.find((item) => item.id === activeGroup);
+  setText(expandedGroupTitle, activeGroup === "all" ? "Toutes les analyses disponibles" : `Analyses · ${tab?.name ?? "Groupe"}`);
   renderForms();
 }
 
+function setupGroupDisclosure() {
+  for (const card of groupCards) {
+    card.addEventListener("click", () => {
+      const nextGroup = activeGroup === card.dataset.groupId ? null : card.dataset.groupId;
+      setActiveGroup(nextGroup);
+    });
+  }
+  allFormsButton?.addEventListener("click", () => {
+    setActiveGroup(activeGroup === "all" ? null : "all");
+  });
+  closeDomainButton?.addEventListener("click", () => setActiveGroup(null));
+}
+
 function formKey(form) {
-  // Identité du formulaire dans un référentiel, pour éviter les doublons multi-groupes.
   if (form.form_id === "GitBranchAndPath") {
     return `${form.form_id}:${form.branch ?? ""}:${form.file_path ?? ""}`;
   }
@@ -145,26 +104,31 @@ function accessibleForms() {
   return [...unique.values()];
 }
 
-function inDomain(entry) {
-  return activeDomain === "all" || moduleForForm(entry.form) === activeDomain;
-}
-
 function renderForms() {
-  if (activeDomain === null) return;
+  if (activeGroup === null) return;
+  const activeTab = tabs.find((tab) => tab.id === activeGroup);
+  if (activeGroup === "all" ? tabs.some((tab) => tab.loading) : activeTab?.loading) {
+    resetFilters.hidden = true;
+    setText(count, "Chargement…");
+    emptyState(formList, "Chargement de vos analyses…");
+    return;
+  }
   const query = normalize(formSearch.value.trim());
   const forms = accessibleForms().filter((entry) =>
-    inDomain(entry) && (!query || normalize(`${entry.form.name ?? ""} ${entry.form.description ?? ""}`).includes(query))
+    (activeGroup === "all" || entry.groupIds.has(activeGroup))
+      && (!query || normalize(`${entry.form.name ?? ""} ${entry.form.description ?? ""}`).includes(query))
   );
   formList.replaceChildren();
   resetFilters.hidden = !query;
   setText(count, `${forms.length} analyse${forms.length !== 1 ? "s" : ""}`);
 
   if (forms.length === 0) {
-    let message = "Aucune analyse disponible dans ce domaine.";
+    let message = "Aucune analyse disponible dans ce groupe.";
     if (tabs.length === 0) message = "Aucune analyse accessible. Contactez votre administrateur.";
     else if (query) message = "Aucune analyse ne correspond à votre recherche.";
-    else if (failedGroups) message = "Aucune analyse disponible ; certains groupes n'ont pas pu être chargés.";
-    else if (activeDomain === "all") message = "Aucune analyse accessible pour vos groupes.";
+    else if (activeTab?.failed) message = "Impossible de charger les analyses de ce groupe.";
+    else if (activeGroup === "all" && failedGroups) message = "Aucune analyse disponible ; certains groupes n'ont pas pu être chargés.";
+    else if (activeGroup === "all") message = "Aucune analyse accessible pour vos groupes.";
     emptyState(formList, message);
     return;
   }
@@ -180,7 +144,7 @@ function renderForms() {
     description.textContent = form.description || "";
     copy.append(title, description);
 
-    const target = api.launchForm(form); // API et routes inchangées.
+    const target = api.launchForm(form);
     if (target) {
       const link = document.createElement("a");
       link.className = "run-button";
@@ -199,24 +163,27 @@ function renderForms() {
 
 async function loadForms() {
   if (tabs.length === 0) {
-    if (noGroup) noGroup.hidden = false;
-    renderForms();
+    const hint = domainIdle?.querySelector("p");
+    if (hint) hint.textContent = "Vous n'appartenez à aucun groupe. Contactez votre administrateur pour accéder aux analyses.";
     return;
   }
-  const results = await Promise.allSettled(tabs.map(async (tab) => {
-    const data = await requestJson(api.groupForms(tab.id));
-    tab.forms = Array.isArray(data?.[tab.listKey]) ? data[tab.listKey] : [];
-  }));
-  failedGroups = results.filter((result) => result.status === "rejected").length;
-  results.forEach((result, index) => {
-    if (result.status === "rejected") {
-      console.error(result.reason);
-      showMessage("error", `Impossible de charger les analyses du groupe « ${tabs[index].name} ». `);
+  await Promise.all(tabs.map(async (tab) => {
+    try {
+      const data = await requestJson(api.groupForms(tab.id));
+      tab.forms = Array.isArray(data?.[tab.listKey]) ? data[tab.listKey] : [];
+    } catch (error) {
+      tab.failed = true;
+      failedGroups += 1;
+      console.error(error);
+      showMessage("error", `Impossible de charger les analyses du groupe « ${tab.name} ». `);
+    } finally {
+      tab.loading = false;
+      updateGroupCard(tab);
+      renderForms();
     }
-  });
-  syncDomainCards();
-  renderForms();
+  }));
 }
+
 
 async function loadRecentRuns() {
   const container = document.getElementById("latest-runs-table");
@@ -236,12 +203,12 @@ async function loadRecentRuns() {
   }
 }
 
-setupDomainDisclosure();
+setupGroupDisclosure();
 formSearch?.addEventListener("input", renderForms);
 globalSearch?.addEventListener("input", () => {
   // Mémoriser la saisie avant l'ouverture, qui réinitialise les anciens filtres.
   const query = globalSearch.value;
-  if (activeDomain === null) setActiveDomain("all");
+  if (activeGroup === null) setActiveGroup("all");
   formSearch.value = query;
   globalSearch.value = query;
   renderForms();

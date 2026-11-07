@@ -31,11 +31,16 @@
 .dashboard-page .domain-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
+  grid-auto-rows: minmax(68px, auto);
   gap: 10px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  min-height: 0;
+  max-height: min(40vh, 270px);
   margin: 0;
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .dashboard-page .domain-grid .module-card {
   display: flex;
@@ -45,7 +50,7 @@
   position: relative;
   min-width: 0;
   min-height: 91px;
-  height: 91px;
+  height: auto;
   padding: 9px 22px 9px 10px;
   text-align: left;
   color: var(--navy);
@@ -70,6 +75,7 @@
 }
 .dashboard-page .domain-grid .module-icon .icon { width: 26px; height: 26px; }
 .dashboard-page .domain-card__label { min-width: 0; flex: 1 1 auto; }
+.dashboard-page .domain-card__count { display: block; margin-top: 3px; color: #71859b; font-size: 10px; line-height: 1.2; }
 .dashboard-page .domain-grid .module-card strong {
   font-size: 12px;
   line-height: 1.32;
@@ -296,7 +302,7 @@
 }
 @media (max-width: 560px) {
   .dashboard-page .domain-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .dashboard-page .domain-grid .module-card { gap: 6px; padding: 8px 19px 8px 7px; height: 85px; }
+  .dashboard-page .domain-grid .module-card { min-height: 85px; height: auto; gap: 6px; padding: 8px 19px 8px 7px; }
   .dashboard-page .domain-grid .module-icon { width: 35px; height: 35px; flex-basis: 35px; }
   .dashboard-page .domain-grid .module-icon .icon { width: 21px; height: 21px; }
   .dashboard-page .domain-grid .module-card strong { font-size: 10.5px; }
@@ -311,7 +317,7 @@
   .dashboard-page .domain-launch-panel__intro h2 { font-size: 18px; }
   .dashboard-page .domain-launch-panel__intro p { margin-top: 2px; }
   .dashboard-page .domain-grid { gap: 8px; }
-  .dashboard-page .domain-grid .module-card { height: 77px; min-height: 77px; }
+  .dashboard-page .domain-grid .module-card { height: auto; min-height: 77px; }
   .dashboard-page .domain-grid .module-icon { width: 42px; height: 42px; flex-basis: 42px; }
   .dashboard-page .domain-grid .module-icon .icon { width: 24px; height: 24px; }
   .dashboard-page .domain-expansion { padding: 8px 9px; gap: 6px; }
@@ -321,11 +327,8 @@
   .dashboard-page .hero { flex-basis: 100px; min-height: 100px; }
 }
 
-/* V9.2 : les modules sont déduits des formulaires autorisés ; masquer
-   réellement les cartes vides malgré display:flex sur .module-card. */
 .dashboard-page .domain-grid .module-card[hidden] { display: none !important; }
 @media (min-width: 860px) and (min-height: 650px) {
-  /* Une cinquième catégorie éventuelle tient en trois rangées compactes. */
-  .dashboard-page .domain-grid .module-card { height: 68px; min-height: 68px; }
+  .dashboard-page .domain-grid .module-card { min-height: 68px; height: auto; }
   .dashboard-page .domain-grid .module-icon { width: 38px; height: 38px; flex-basis: 38px; }
 }
