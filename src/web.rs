@@ -137,6 +137,7 @@ async fn rocket(
                 routes::backend::newgroup_get,
                 routes::backend::list_groups,
                 routes::backend::get_all_forms_for_group,
+                routes::backend::get_all_forms_for_user,
                 // Simple GET to list users
                 routes::backend::list_users,
                 // Simple GET to list the groups of a user
@@ -145,6 +146,7 @@ async fn rocket(
                 routes::backend::get_all_forms,
                 routes::backend::password_edit_post,
                 routes::backend::newrun_post,
+                routes::backend::preview_post,
                 routes::backend::editrun_post,
                 routes::backend::validate_run_post,
                 routes::backend::upload_post,

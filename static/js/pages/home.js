@@ -1,4 +1,5 @@
 import { api, requestJson } from "../api.js";
+import { createPagination } from "../pagination.js";
 import {
   emptyState,
   iconElement,
@@ -9,6 +10,7 @@ import {
   showMessage,
 } from "../ui.js";
 
+const PAGE_SIZE = 6;
 const pageData = readPageData();
 const groups = Array.isArray(pageData.groups) ? pageData.groups : [];
 const isAdmin = pageData.isAdmin === true;
@@ -21,21 +23,47 @@ const allFormsButton = document.getElementById("showAllForms");
 const expandedGroupTitle = document.getElementById("expanded-group-title");
 const resetFilters = document.getElementById("resetFilters");
 const globalSearch = document.getElementById("globalSearch");
+const groupSelector = document.getElementById("groupSelector");
 const count = document.getElementById("availableCount");
 const groupCards = [...document.querySelectorAll("[data-group-id]")];
 
-const tabs = groups.map((group) => ({
-  id: String(group.id), name: group.name, listKey: "with_group", forms: [], loading: true, failed: false,
-}));
-if (isAdmin) {
-  tabs.push({ id: "None", name: "Sans groupe", listKey: "without_group", forms: [], loading: true, failed: false });
-}
+const makeTab = (id, name, listKey, kind) => ({
+  id,
+  name,
+  listKey,
+  kind,
+  forms: [],
+  page: 1,
+  pagination: null,
+  loading: true,
+  failed: false,
+  requestToken: 0,
+});
 
-const normalize = (value) => String(value ?? "")
-  .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const tabs = groups.map((group) =>
+  makeTab(String(group.id), group.name, "with_group", "group"),
+);
+if (isAdmin) {
+  tabs.push(makeTab("None", "Sans groupe", "without_group", "group"));
+}
+const allTab = makeTab("all", "Toutes les analyses disponibles", "all", "all");
 
 let activeGroup = null;
 let failedGroups = 0;
+let searchTimer = null;
+
+const pagination = createPagination({
+  onPage: (page) => loadActivePage(page),
+});
+
+function findTab(groupId) {
+  if (groupId === "all") return allTab;
+  return tabs.find((tab) => tab.id === groupId);
+}
+
+function activeTab() {
+  return activeGroup === null ? null : findTab(activeGroup);
+}
 
 function updateGroupCard(tab) {
   const card = groupCards.find((item) => item.dataset.groupId === tab.id);
@@ -43,8 +71,10 @@ function updateGroupCard(tab) {
   if (!label) return;
   if (tab.loading) label.textContent = "Chargement…";
   else if (tab.failed) label.textContent = "Indisponible";
-  else if (tab.forms.length === 0) label.textContent = "Aucune analyse";
-  else label.textContent = `${tab.forms.length} analyse${tab.forms.length === 1 ? "" : "s"}`;
+  else {
+    const total = tab.pagination?.total_count ?? tab.forms.length;
+    label.textContent = total === 0 ? "Aucune analyse" : `${total} analyse${total === 1 ? "" : "s"}`;
+  }
 }
 
 function setActiveGroup(groupId) {
@@ -67,9 +97,12 @@ function setActiveGroup(groupId) {
     if (globalSearch) globalSearch.value = "";
     return;
   }
-  const tab = tabs.find((item) => item.id === activeGroup);
+  const tab = activeTab();
   setText(expandedGroupTitle, activeGroup === "all" ? "Toutes les analyses disponibles" : `Analyses · ${tab?.name ?? "Groupe"}`);
-  renderForms();
+  if (tab) {
+    renderForms();
+    pagination.update(tab.pagination);
+  }
 }
 
 function setupGroupDisclosure() {
@@ -83,59 +116,52 @@ function setupGroupDisclosure() {
     setActiveGroup(activeGroup === "all" ? null : "all");
   });
   closeDomainButton?.addEventListener("click", () => setActiveGroup(null));
+  groupSelector?.addEventListener("change", () => {
+    const groupId = groupSelector.value;
+    groupSelector.value = "";
+    if (groupId) setActiveGroup(groupId);
+  });
 }
 
-function formKey(form) {
-  if (form.form_id === "GitBranchAndPath") {
-    return `${form.form_id}:${form.branch ?? ""}:${form.file_path ?? ""}`;
-  }
-  return JSON.stringify([form.form_id, form.name, form.branch, form.file_path]);
-}
-
-function accessibleForms() {
-  const unique = new Map();
-  for (const tab of tabs) {
-    for (const form of tab.forms) {
-      const key = formKey(form);
-      if (!unique.has(key)) unique.set(key, { form, groupIds: new Set() });
-      unique.get(key).groupIds.add(tab.id);
-    }
-  }
-  return [...unique.values()];
+function isNonMain(form) {
+  return form.form_id === "GitBranchAndPath"
+    && form.branch
+    && form.branch !== "main";
 }
 
 function renderForms() {
   if (activeGroup === null) return;
-  const activeTab = tabs.find((tab) => tab.id === activeGroup);
-  if (activeGroup === "all" ? tabs.some((tab) => tab.loading) : activeTab?.loading) {
+  const tab = activeTab();
+  if (!tab) return;
+
+  if (tab.loading) {
     resetFilters.hidden = true;
     setText(count, "Chargement…");
     emptyState(formList, "Chargement de vos analyses…");
     return;
   }
-  const query = normalize(formSearch.value.trim());
-  const forms = accessibleForms().filter((entry) =>
-    (activeGroup === "all" || entry.groupIds.has(activeGroup))
-      && (!query || normalize(`${entry.form.name ?? ""} ${entry.form.description ?? ""}`).includes(query))
-  );
+
+  const query = formSearch.value.trim();
+  const total = tab.pagination?.total_count ?? tab.forms.length;
   formList.replaceChildren();
   resetFilters.hidden = !query;
-  setText(count, `${forms.length} analyse${forms.length !== 1 ? "s" : ""}`);
+  setText(count, `${total} analyse${total === 1 ? "" : "s"}`);
 
-  if (forms.length === 0) {
+  if (tab.forms.length === 0) {
     let message = "Aucune analyse disponible dans ce groupe.";
     if (tabs.length === 0) message = "Aucune analyse accessible. Contactez votre administrateur.";
     else if (query) message = "Aucune analyse ne correspond à votre recherche.";
-    else if (activeTab?.failed) message = "Impossible de charger les analyses de ce groupe.";
+    else if (tab.failed) message = "Impossible de charger les analyses de ce groupe.";
     else if (activeGroup === "all" && failedGroups) message = "Aucune analyse disponible ; certains groupes n'ont pas pu être chargés.";
     else if (activeGroup === "all") message = "Aucune analyse accessible pour vos groupes.";
     emptyState(formList, message);
     return;
   }
 
-  for (const { form } of forms) {
+  for (const form of tab.forms) {
     const item = document.createElement("article");
-    item.className = "form-item domain-analysis-card";
+    const nonMain = isNonMain(form);
+    item.className = `form-item domain-analysis-card${nonMain ? " domain-analysis-card--branch" : ""}`;
     const copy = document.createElement("div");
     copy.className = "form-copy";
     const title = document.createElement("strong");
@@ -143,6 +169,12 @@ function renderForms() {
     const description = document.createElement("p");
     description.textContent = form.description || "";
     copy.append(title, description);
+    if (nonMain) {
+      const branch = document.createElement("span");
+      branch.className = "branch-badge";
+      branch.textContent = `Branche ${form.branch}`;
+      copy.append(branch);
+    }
 
     const target = api.launchForm(form);
     if (target) {
@@ -161,29 +193,62 @@ function renderForms() {
   }
 }
 
+async function loadTab(tab, page = 1, search = "") {
+  const token = tab.requestToken + 1;
+  tab.requestToken = token;
+  tab.loading = true;
+  tab.failed = false;
+  if (activeGroup === tab.id) renderForms();
+
+  try {
+    const data = tab.kind === "all"
+      ? await requestJson(api.allGroupForms({ page, pageSize: PAGE_SIZE, search }))
+      : await requestJson(api.groupForms(tab.id, { page, pageSize: PAGE_SIZE, search }));
+    if (tab.requestToken !== token) return;
+    tab.forms = Array.isArray(data?.[tab.listKey]) ? data[tab.listKey] : [];
+    tab.pagination = data?.pagination ?? null;
+    tab.page = tab.pagination?.current_page ?? page;
+  } catch (error) {
+    if (tab.requestToken !== token) return;
+    tab.failed = true;
+    failedGroups += 1;
+    console.error(error);
+    if (tab.kind === "group") {
+      showMessage("error", `Impossible de charger les analyses du groupe « ${tab.name} ». `);
+    }
+  } finally {
+    if (tab.requestToken !== token) return;
+    tab.loading = false;
+    updateGroupCard(tab);
+    if (activeGroup === tab.id) {
+      renderForms();
+      pagination.update(tab.pagination);
+    }
+  }
+}
+
+function loadActivePage(page) {
+  const tab = activeTab();
+  if (!tab) return;
+  loadTab(tab, page, formSearch.value.trim());
+}
+
+function scheduleSearch() {
+  window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => {
+    const tab = activeTab();
+    if (!tab) return;
+    loadTab(tab, 1, formSearch.value.trim());
+  }, 250);
+}
+
 async function loadForms() {
   if (tabs.length === 0) {
     const hint = domainIdle?.querySelector("p");
     if (hint) hint.textContent = "Vous n'appartenez à aucun groupe. Contactez votre administrateur pour accéder aux analyses.";
-    return;
   }
-  await Promise.all(tabs.map(async (tab) => {
-    try {
-      const data = await requestJson(api.groupForms(tab.id));
-      tab.forms = Array.isArray(data?.[tab.listKey]) ? data[tab.listKey] : [];
-    } catch (error) {
-      tab.failed = true;
-      failedGroups += 1;
-      console.error(error);
-      showMessage("error", `Impossible de charger les analyses du groupe « ${tab.name} ». `);
-    } finally {
-      tab.loading = false;
-      updateGroupCard(tab);
-      renderForms();
-    }
-  }));
+  await Promise.all([...tabs, allTab].map((tab) => loadTab(tab, 1)));
 }
-
 
 async function loadRecentRuns() {
   const container = document.getElementById("latest-runs-table");
@@ -204,19 +269,19 @@ async function loadRecentRuns() {
 }
 
 setupGroupDisclosure();
-formSearch?.addEventListener("input", renderForms);
+formSearch?.addEventListener("input", scheduleSearch);
 globalSearch?.addEventListener("input", () => {
   // Mémoriser la saisie avant l'ouverture, qui réinitialise les anciens filtres.
   const query = globalSearch.value;
-  if (activeGroup === null) setActiveGroup("all");
+  if (activeGroup !== "all") setActiveGroup("all");
   formSearch.value = query;
   globalSearch.value = query;
-  renderForms();
+  scheduleSearch();
 });
 resetFilters?.addEventListener("click", () => {
   formSearch.value = "";
   if (globalSearch) globalSearch.value = "";
-  renderForms();
+  loadActivePage(1);
 });
 await loadForms();
 await loadRecentRuns();

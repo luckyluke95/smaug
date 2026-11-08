@@ -46,7 +46,7 @@ un lien http (`<a href=...>`) par fichier. Ainsi, on aurait par exemple:
 
 - [X] Déplacer la route `/smaug/data` dans le module backend...
 
-- [ ] En cas d'interruption de l'exécution d'un run, le code d'erreur n'est pas correctement récupéré (affiche exit code: ?)
+- [X] En cas d'interruption de l'exécution d'un run, le code d'erreur n'est pas correctement récupéré (affiche exit code: ?)
 
 ## Intégration continue
 
@@ -54,4 +54,11 @@ un lien http (`<a href=...>`) par fichier. Ainsi, on aurait par exemple:
 
 ## Vérifications post-IA
 
-- [ ] Dans `routes/front_end/admin.rs`, les fonctions `password_edit_get` et `register_get` passent des variables curieuses au contexte (pages `admin/passedit` et `admin/register`).
+- [X] Dans `routes/front_end/admin.rs`, les fonctions `password_edit_get` et `register_get` passent des variables curieuses au contexte (pages `admin/passedit` et `admin/register`).
+- [X] La route frontend `/smaug/show/runs` n'utilise pas correctement les réopnses de `/smaug/api/listruns?<page>&<page_size>&<status>`: pas de pagination. Celle-ci devrait être systématique, je ne la vois pas sur la page.
+- [X] Sur la page d'accueil (dans `home.html.j2`), il faudrait que:
+  - [X] Les cartes avec les analyses disponibles soient paginées (pas sûr qu'elles le soient. Elles interogent `/smaug/api/groups/forms/1` qui devrait paginer ses résultats)
+  - [X] Les liens de catégorie (les cartes) devraient être 4 maximum (au-delà, afficher une carte en 4ème position, avec un menu déroulant pour sélectionner la catégorie).
+  - [X] Dans la carte qui liste les analyses disponibles pour une catégorie donnée devrait afficher un fond légèrement orangé pour les analyses qui n'apparaissent pas sur la branche `main`. Et d'ailleurs, cette carte devrait afficher clairement le nom de la branche en question si celle-ci est différente de main
+- [X] Il faudrait ajouter une guarde à la route `/smaug/runs/submit` pour empêcher à un utilisateur non autorisé de lancer une analyse à laquelle il n'est pas sensé avoir accès (en effet, pour l'instant, si il entre le chemin complet, comme `/smaug/runs/submit/branch/<nom d'une branche non main>/smaug-genetique/.forms/<nom d'un formulaire dont il ne fait pas partie>`, il pourra quand même lancer une analyse qui ne lui a pas été listée).
+- [X] Il faudrait, enfin, dans la page de soumission d'un run, corriger la fiche 'Résumé', je veux plutôt y voir les items suivants: Nom du formulaire, Description du formulaire, et un dépliant "Avancé" qui afficherait: la branche, et un rendu de ce qui serait exécuté étant donné les valeurs remplies à l'instant T.

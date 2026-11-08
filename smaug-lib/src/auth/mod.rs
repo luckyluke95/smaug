@@ -33,6 +33,8 @@ pub enum AuthError {
     NoPassword,
     #[error("Accès réservé aux administrateurs")]
     AdminsOnly,
+    #[error("Vous n'avez pas accès à cette ressource")]
+    AccessDenied,
     #[error("Signature de webhook invalide")]
     InvalidSignature,
     #[error("Le groupe `{0}` existe déjà!")]
@@ -52,6 +54,7 @@ fn status_of(error: &AuthError) -> Status {
         AuthError::InvalidCredentials | AuthError::UnknownUser => Status::Unauthorized,
         AuthError::NoPassword | AuthError::InvalidSignature => Status::BadRequest,
         AuthError::AdminsOnly => Status::Forbidden,
+        AuthError::AccessDenied => Status::Forbidden,
         AuthError::DuplicateGroup(_) => Status::Conflict,
         AuthError::AnyhowError { .. } => Status::InternalServerError,
     }

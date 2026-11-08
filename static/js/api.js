@@ -67,10 +67,20 @@ export const api = Object.freeze({
   groups: `${API_ROOT}/groups/list`,
   userGroups: (userId) => `${API_ROOT}/groups/list/${encode(userId)}`,
   updateGroups: `${API_ROOT}/groups/update`,
-  groupForms: (groupId) => `${API_ROOT}/groups/forms/${encode(groupId)}`,
+  groupForms: (groupId, { page = 1, pageSize = 6, search = "" } = {}) => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (search) params.set("search", search);
+    return `${API_ROOT}/groups/forms/${encode(groupId)}?${params}`;
+  },
+  allGroupForms: ({ page = 1, pageSize = 6, search = "" } = {}) => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (search) params.set("search", search);
+    return `${API_ROOT}/groups/forms/all?${params}`;
+  },
   users: `${API_ROOT}/users/list`,
   updateFormsCache: `${API_ROOT}/update/cache/forms`,
   newRun: `${API_ROOT}/newrun`,
+  preview: `${API_ROOT}/preview`,
   editRun: `${API_ROOT}/editrun`,
   validateRun: (runId) => `${API_ROOT}/validate/${encode(runId)}`,
   retryRun: (runId) => `${API_ROOT}/retry/${encode(runId)}`,

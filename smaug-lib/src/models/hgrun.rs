@@ -159,14 +159,14 @@ impl Run {
                     RETURNING run_id
                     "#,
                 )
-                .bind(&run_submission.user_id)
+                .bind(run_submission.user_id)
                 .bind(&run_submission.run_name)
-                .bind(&run_submission.creation_date)
+                .bind(run_submission.creation_date)
                 .bind(RunStatus::Idle.to_string())
                 .bind(0)
                 .bind(&branch)
                 .bind(&user_defined_vars_str)
-                .bind(&file_path.to_string_lossy())
+                .bind(file_path.to_string_lossy())
                 .fetch_one(pool)
                 .await
                 .with_context(|| {

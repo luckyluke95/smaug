@@ -5,7 +5,11 @@ const { form, user, run } = readPageData();
 const container = document.getElementById("form-variables");
 const formElement = document.getElementById("run-form");
 const saveButton = document.getElementById("save-run");
+const previewOutput = document.getElementById("run-preview");
+const previewDetails = document.getElementById("summary-advanced");
 const currentValues = run?.user_defined_vars || {};
+let previewTimer = null;
+let previewToken = 0;
 
 const makeOption = (value, label, selected = false) => {
   const option = document.createElement("option");
@@ -96,6 +100,7 @@ async function renderVariable(variable) {
         const path = await requestJson(api.upload, { method: "POST", body: data });
         hidden.value = path;
         status.textContent = `Fichier envoyé : ${path}`;
+        schedulePreview();
       } catch (error) {
         hidden.value = "";
         status.textContent = "";
@@ -170,6 +175,43 @@ function collectValues() {
   return values;
 }
 
+async function refreshPreview() {
+  if (!previewOutput || !form?.branch || !form?.file_path) return;
+  const token = previewToken + 1;
+  previewToken = token;
+  const runName = run?.run_name
+    || document.getElementById("run-name")?.value.trim()
+    || "nouveau-run";
+
+  previewOutput.textContent = "Rendu du script…";
+  previewOutput.classList.add("is-empty");
+  try {
+    const data = await requestJson(api.preview, {
+      method: "POST",
+      body: {
+        branch: form.branch,
+        file_path: form.file_path,
+        user_defined_vars: collectValues(),
+        run_name: runName,
+      },
+    });
+    if (token !== previewToken) return;
+    const script = data?.script || "";
+    previewOutput.textContent = script || "Aucun script à afficher.";
+    previewOutput.classList.toggle("is-empty", !script);
+  } catch (error) {
+    if (token !== previewToken) return;
+    previewOutput.textContent = error.message || "Impossible de rendre le script.";
+    previewOutput.classList.add("is-empty");
+  }
+}
+
+function schedulePreview() {
+  if (!previewDetails?.open) return;
+  window.clearTimeout(previewTimer);
+  previewTimer = window.setTimeout(refreshPreview, 400);
+}
+
 async function submitRun() {
   if (!formElement.reportValidity()) return;
   saveButton.disabled = true;
@@ -233,4 +275,10 @@ if (container && formElement) {
     event.preventDefault();
     submitRun();
   });
+  container.addEventListener("input", schedulePreview);
+  container.addEventListener("change", schedulePreview);
+  previewDetails?.addEventListener("toggle", () => {
+    if (previewDetails.open) refreshPreview();
+  });
+  if (previewDetails?.open) refreshPreview();
 }

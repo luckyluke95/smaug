@@ -514,14 +514,17 @@ async fn join_log_tasks(
 }
 
 /// Builds the error describing an analysis process that exited with a failure.
+///
+/// A process interrupted by a signal has no exit code (`code()` returns `None`);
+/// in that case the signal number is reported instead of falling back to `?`.
 fn exit_status_error(status: ExitStatus) -> anyhow::Error {
     use std::os::unix::process::ExitStatusExt;
 
-    let reason = status
-        .code()
-        .map(|code| format!("exit code {code}"))
-        .or_else(|| status.signal().map(|signal| format!("signal {signal}")))
-        .unwrap_or_else(|| "?".to_string());
+    let reason = match (status.code(), status.signal()) {
+        (Some(code), _) => format!("code de sortie {code}"),
+        (None, Some(signal)) => format!("interrompu par le signal {signal}"),
+        (None, None) => "statut de sortie indéterminé".to_string(),
+    };
     anyhow::anyhow!("({reason})")
 }
 
@@ -539,4 +542,26 @@ async fn ensure_absolute_dir(path: &Path, name: &str) -> Result<()> {
             .with_context(|| format!("Impossible de créer le dossier {}", name))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    use super::exit_status_error;
+
+    #[test]
+    fn reports_exit_code() {
+        let error = exit_status_error(ExitStatus::from_raw(11 << 8));
+        assert_eq!(error.to_string(), "(code de sortie 11)");
+    }
+
+    #[test]
+    fn reports_signal_instead_of_missing_exit_code() {
+        // An interrupted process has no exit code: the signal must be reported
+        // instead of falling back to `?`.
+        let error = exit_status_error(ExitStatus::from_raw(2));
+        assert_eq!(error.to_string(), "(interrompu par le signal 2)");
+    }
 }

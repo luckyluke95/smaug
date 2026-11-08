@@ -36,13 +36,27 @@
       <p>Choisissez un groupe pour afficher les analyses auxquelles vous avez accès.</p>
     </div>
     <div class="module-grid domain-grid" aria-label="Groupes d'analyses">
-      {% for group in user_groups %}
+      {% for group in user_groups[:3] %}
       <button type="button" class="module-card {{ loop.cycle('blue', 'violet', 'coral', 'mint', 'amber', 'slate') }}" data-group-id="{{ group.id }}" aria-expanded="false" aria-controls="domain-expansion">
         <span class="module-icon">{{ ui.icon("users") }}</span>
         <span class="domain-card__label"><strong>{{ group.name }}</strong><span class="domain-card__count" data-group-count>Chargement…</span></span>
         <span class="domain-card__chevron" aria-hidden="true"></span>
       </button>
       {% endfor %}
+      {% if user_groups | length > 3 %}
+      <div class="module-card domain-selector-card amber">
+        <span class="module-icon">{{ ui.icon("users") }}</span>
+        <span class="domain-card__label">
+          <strong>Autres groupes</strong>
+          <select id="groupSelector" class="domain-selector" aria-label="Choisir un autre groupe">
+            <option value="">Choisir un groupe…</option>
+            {% for group in user_groups[3:] %}
+            <option value="{{ group.id }}">{{ group.name }}</option>
+            {% endfor %}
+          </select>
+        </span>
+      </div>
+      {% endif %}
     </div>
     <section id="domain-expansion" class="domain-expansion" aria-labelledby="expanded-group-title">
       <div id="domain-idle" class="domain-expansion__idle">
@@ -68,6 +82,7 @@
         <div id="formList" class="domain-expansion__list" aria-live="polite">
           <p class="empty-state">Chargement de vos analyses…</p>
         </div>
+        {{ ui.pagination() }}
       </div>
       <button type="button" id="showAllForms" class="domain-all-button" aria-expanded="false" aria-controls="domain-expansion">Toutes les analyses disponibles {{ ui.icon("arrow") }}</button>
     </section>

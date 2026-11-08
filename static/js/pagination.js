@@ -32,15 +32,16 @@ export function createPagination({ root = document.getElementById("pagination"),
 
   return {
     update(pagination) {
+      // Pagination is systematic: controls stay visible even when a single
+      // page is returned, so the user always knows where they stand.
       currentPage = Number(pagination?.current_page) || 1;
       totalPages = Math.max(1, Number(pagination?.total_pages) || 1);
-      const multiple = totalPages > 1;
-      root.hidden = !multiple;
-      root.setAttribute("aria-hidden", String(!multiple));
+      root.hidden = !pagination;
+      root.setAttribute("aria-hidden", String(!pagination));
       if (pageInput) pageInput.value = String(currentPage);
       if (pageInfo) pageInfo.textContent = `/ ${totalPages}`;
-      const previousDisabled = !multiple || currentPage <= 1;
-      const nextDisabled = !multiple || currentPage >= totalPages;
+      const previousDisabled = currentPage <= 1;
+      const nextDisabled = currentPage >= totalPages;
       root.querySelector('[data-page-action="first"]').disabled = previousDisabled;
       root.querySelector('[data-page-action="prev"]').disabled = previousDisabled;
       root.querySelector('[data-page-action="next"]').disabled = nextDisabled;

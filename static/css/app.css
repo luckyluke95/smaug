@@ -475,6 +475,12 @@ img { max-width: 100%; }
 .run-button .icon { width: 14px; height: 14px; fill: currentColor; stroke: none; }
 .empty-state { padding: 30px 8px; color: #72859a; font-size: 13px; text-align: center; }
 .panel-footnote { margin-top: 10px; color: #9aabba; font-size: 10px; }
+.summary-advanced { margin-top: 12px; border-top: 1px solid #e7eef6; padding-top: 10px; }
+.summary-advanced summary { cursor: pointer; color: var(--blue); font-size: 12px; font-weight: 750; list-style: none; }
+.summary-advanced summary::-webkit-details-marker { display: none; }
+.summary-advanced[open] summary::before { content: "▾ "; }
+.summary-advanced:not([open]) summary::before { content: "▸ "; }
+.summary-advanced h3 { margin: 12px 0 6px; color: #334e6d; font-size: 12px; }
 .footer {
   display: flex;
   justify-content: space-between;
@@ -974,6 +980,10 @@ img { max-width: 100%; }
 .dashboard-page .domain-analysis-card .form-copy p { margin-top: 3px; color: #71859b; font-size: 10px; line-height: 1.25; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .dashboard-page .domain-analysis-card .run-button { padding: 7px 8px; font-size: 10px; gap: 4px; }
 .dashboard-page .domain-analysis-card .run-button .icon { width: 13px; height: 13px; }
+.dashboard-page .domain-analysis-card--branch { background: #fff8ef; border-color: #f3d3a6; }
+.dashboard-page .branch-badge { display: inline-flex; margin-top: 4px; padding: 2px 7px; border-radius: 100px; background: #ffe5c4; color: #97570a; font-size: 9px; font-weight: 750; line-height: 1.25; }
+.dashboard-page .domain-selector-card { cursor: default; }
+.dashboard-page .domain-selector { width: 100%; min-width: 0; margin-top: 4px; padding: 3px 5px; border: 1px solid #f0c98d; border-radius: 7px; background: #fff; color: #6b4a12; font-size: 10px; }
 .dashboard-page .domain-all-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; align-self: flex-start; padding: 3px 0; border: 0; background: transparent; color: #1268aa; font-size: 11px; font-weight: 750; cursor: pointer; }
 .dashboard-page .domain-all-button:hover,
 .dashboard-page .domain-all-button[aria-expanded="true"] { text-decoration: underline; }

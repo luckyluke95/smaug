@@ -24,6 +24,7 @@ macro_rules! additional_vars {
         ];
 
         // 2. Generate the method signature and body
+        #[allow(clippy::too_many_arguments)]
         pub fn jinja_context(
             &self,
             user_vars: &HashMap<String, String>,
@@ -182,8 +183,8 @@ pub enum FileIdentification {
 impl FileIdentification {
     pub fn path(&self) -> &Path {
         match self {
-            Self::GitBranchAndPath { file_path, .. } => &file_path,
-            Self::GitCommit { file_path, .. } => &file_path,
+            Self::GitBranchAndPath { file_path, .. } => file_path,
+            Self::GitCommit { file_path, .. } => file_path,
             Self::None => Path::new(""),
         }
     }
@@ -228,7 +229,7 @@ impl Form {
         for branch_name in all_branches.into_iter() {
             // 1. List yaml files on this branch. A deleted or unreachable branch must
             // not discard every other branch's forms: log it and keep going.
-            let items = match versionning::list_yaml_forms(&pipelines, &branch_name).await {
+            let items = match versionning::list_yaml_forms(pipelines, &branch_name).await {
                 Ok(items) => items,
                 Err(e) => {
                     warn!(
@@ -551,7 +552,7 @@ impl CachedForm {
                 "#,
             )
             .bind(&branch)
-            .bind(&file_path.to_string_lossy())
+            .bind(file_path.to_string_lossy())
             .bind(&name)
             .bind(&description)
             .fetch_one(&mut *tx)
@@ -772,6 +773,76 @@ ORDER BY fd.branch, fd.file_path"#,
         };
 
         Ok(forms.iter().filter_map(form_def_from_row).collect())
+    }
+
+    /// Every cached form visible to at least one of `group_ids`.
+    ///
+    /// When `include_ungrouped` is true (admins only), forms without any group
+    /// association are added as well. The result is deduplicated and sorted by
+    /// branch then form path.
+    pub async fn get_form_defs_for_groups(
+        pool: &SqlitePool,
+        group_ids: &[i64],
+        include_ungrouped: bool,
+    ) -> Result<Vec<Self>> {
+        let mut forms = std::collections::BTreeMap::new();
+
+        for group_id in group_ids {
+            for form in Self::get_form_defs_for_group(pool, Some(*group_id)).await? {
+                forms.insert(form.form_def_id, form);
+            }
+        }
+        if include_ungrouped {
+            for form in Self::get_form_defs_for_group(pool, None).await? {
+                forms.insert(form.form_def_id, form);
+            }
+        }
+
+        let mut forms: Vec<Self> = forms.into_values().collect();
+        forms.sort_by(|a, b| {
+            let a_key = form_sort_key(a);
+            let b_key = form_sort_key(b);
+            a_key.cmp(&b_key)
+        });
+        Ok(forms)
+    }
+
+    /// Whether a user is allowed to open and submit this form.
+    ///
+    /// Admins have access to every form. Other users must belong to at least one
+    /// of the form's groups. A form that is not cached, or that has no group, is
+    /// admin-only.
+    pub async fn user_can_access(
+        pool: &SqlitePool,
+        user_id: i64,
+        is_admin: bool,
+        branch: &str,
+        form_path: &str,
+    ) -> Result<bool> {
+        if is_admin {
+            return Ok(true);
+        }
+
+        let form_groups = Self::get_group_ids(pool, branch, form_path).await?;
+        if form_groups.is_empty() {
+            return Ok(false);
+        }
+
+        let user_groups = groups::Group::get_user_groups(pool, user_id).await?;
+        Ok(user_groups
+            .iter()
+            .any(|group| form_groups.contains(&group.id)))
+    }
+}
+
+/// Sort key used to keep forms grouped by branch and file path.
+fn form_sort_key(form: &CachedForm) -> (String, String) {
+    match &form.form_identification {
+        FileIdentification::GitBranchAndPath { branch, file_path } => {
+            (branch.clone(), file_path.display().to_string())
+        }
+        FileIdentification::GitCommit { commit_hash, .. } => (commit_hash.clone(), String::new()),
+        FileIdentification::None => (String::new(), String::new()),
     }
 }
 

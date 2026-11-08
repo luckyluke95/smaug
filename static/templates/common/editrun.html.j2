@@ -57,12 +57,19 @@
       <div>{{ ui.icon("info", "section-icon") }}<h2>Résumé</h2></div>
     </div>
     <dl class="run-meta">
-      <div class="info-row"><dt>Formulaire</dt><dd>{{ form.name }}</dd></div>
-      <div class="info-row"><dt>Branche</dt><dd>{{ form.branch | default("—") }}</dd></div>
-      <div class="info-row"><dt>Fichier</dt><dd>{{ form.file_path | default("—") }}</dd></div>
-      <div class="info-row"><dt>Exécution</dt><dd>{{ form.exec | default(form.script_name | default("—")) }}</dd></div>
+      <div class="info-row"><dt>Nom du formulaire</dt><dd>{{ form.name }}</dd></div>
+      {% if form.description %}
+      <div class="info-row"><dt>Description du formulaire</dt><dd>{{ form.description }}</dd></div>
+      {% endif %}
     </dl>
-    <p class="panel-footnote">Les variables marquées comme fichier sont envoyées sur le serveur au moment de leur sélection.</p>
+    <details class="summary-advanced" id="summary-advanced">
+      <summary>Avancé</summary>
+      <dl class="run-meta">
+        <div class="info-row"><dt>Branche</dt><dd>{{ form.branch | default("—") }}</dd></div>
+      </dl>
+      <h3>Script qui sera exécuté</h3>
+      <pre id="run-preview" class="stdout script-output is-empty">Renseignez les variables pour voir le script…</pre>
+    </details>
   </aside>
 </div>
 
