@@ -778,33 +778,65 @@ ORDER BY fd.branch, fd.file_path"#,
     /// Every cached form visible to at least one of `group_ids`.
     ///
     /// When `include_ungrouped` is true (admins only), forms without any group
-    /// association are added as well. The result is deduplicated and sorted by
-    /// branch then form path.
+    /// association are added as well. Deduplication and ordering are performed
+    /// by the database, so no in-memory filtering or sorting is needed.
     pub async fn get_form_defs_for_groups(
         pool: &SqlitePool,
         group_ids: &[i64],
         include_ungrouped: bool,
     ) -> Result<Vec<Self>> {
-        let mut forms = std::collections::BTreeMap::new();
-
-        for group_id in group_ids {
-            for form in Self::get_form_defs_for_group(pool, Some(*group_id)).await? {
-                forms.insert(form.form_def_id, form);
-            }
+        if group_ids.is_empty() && !include_ungrouped {
+            return Ok(Vec::new());
         }
+
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            r#"
+            SELECT fd.form_def_id, fd.branch, fd.file_path, fd.name, fd.description
+            FROM FormDefs fd
+            WHERE
+            "#,
+        );
+
+        let mut has_condition = false;
+        if !group_ids.is_empty() {
+            query.push(
+                r#"EXISTS (
+                    SELECT 1
+                    FROM FormDefHasGroup fhg
+                    WHERE fhg.form_def_id = fd.form_def_id
+                      AND fhg.group_id IN ("#,
+            );
+            let mut separated = query.separated(", ");
+            for group_id in group_ids {
+                separated.push_bind(*group_id);
+            }
+            query.push("))");
+            has_condition = true;
+        }
+
         if include_ungrouped {
-            for form in Self::get_form_defs_for_group(pool, None).await? {
-                forms.insert(form.form_def_id, form);
+            if has_condition {
+                query.push(" OR ");
             }
+            query.push(
+                r#"NOT EXISTS (
+                    SELECT 1
+                    FROM FormDefHasGroup fhg
+                    WHERE fhg.form_def_id = fd.form_def_id
+                )"#,
+            );
         }
 
-        let mut forms: Vec<Self> = forms.into_values().collect();
-        forms.sort_by(|a, b| {
-            let a_key = form_sort_key(a);
-            let b_key = form_sort_key(b);
-            a_key.cmp(&b_key)
-        });
-        Ok(forms)
+        query.push(" ORDER BY fd.branch, fd.file_path");
+
+        Ok(query
+            .build()
+            .fetch_all(pool)
+            .await
+            .context("Impossible de lister les formulaires des groupes demandés")?
+            .iter()
+            .filter_map(form_def_from_row)
+            .collect())
     }
 
     /// Whether a user is allowed to open and submit this form.
@@ -832,17 +864,6 @@ ORDER BY fd.branch, fd.file_path"#,
         Ok(user_groups
             .iter()
             .any(|group| form_groups.contains(&group.id)))
-    }
-}
-
-/// Sort key used to keep forms grouped by branch and file path.
-fn form_sort_key(form: &CachedForm) -> (String, String) {
-    match &form.form_identification {
-        FileIdentification::GitBranchAndPath { branch, file_path } => {
-            (branch.clone(), file_path.display().to_string())
-        }
-        FileIdentification::GitCommit { commit_hash, .. } => (commit_hash.clone(), String::new()),
-        FileIdentification::None => (String::new(), String::new()),
     }
 }
 
@@ -1249,6 +1270,73 @@ mod form_def_cache_tests {
             .expect("for no group");
         assert!(forms_with_group.is_empty());
         assert_eq!(forms_without_group.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_forms_for_groups_deduplicates_and_filters() {
+        let pool = test_pool().await;
+        let bio = Group::add_group(&pool, "Bio").await.expect("add Bio");
+        let chimie = Group::add_group(&pool, "Chimie").await.expect("add Chimie");
+
+        CachedForm::rebuild_cache_from_forms(
+            &pool,
+            vec![
+                // Shared by both groups: must appear only once.
+                form("F1", "main", ".forms/f1.yaml", &["Bio", "Chimie"]),
+                form("F2", "dev", ".forms/f2.yaml", &["Chimie"]),
+                form("F3", "main", ".forms/f3.yaml", &[]),
+            ],
+        )
+        .await
+        .expect("rebuild cache");
+
+        let names = |forms: Vec<CachedForm>| -> Vec<String> {
+            forms.into_iter().map(|form| form.name).collect()
+        };
+
+        assert_eq!(
+            names(
+                CachedForm::get_form_defs_for_groups(&pool, &[bio], false)
+                    .await
+                    .expect("bio")
+            ),
+            vec!["F1"]
+        );
+
+        // F1 is reachable from both groups but `EXISTS` keeps a single row.
+        assert_eq!(
+            names(
+                CachedForm::get_form_defs_for_groups(&pool, &[bio, chimie], false)
+                    .await
+                    .expect("bio + chimie")
+            ),
+            vec!["F2", "F1"]
+        );
+
+        // Admins also get the ungrouped form, still ordered by branch/path.
+        assert_eq!(
+            names(
+                CachedForm::get_form_defs_for_groups(&pool, &[bio, chimie], true)
+                    .await
+                    .expect("with ungrouped")
+            ),
+            vec!["F2", "F1", "F3"]
+        );
+
+        assert!(
+            CachedForm::get_form_defs_for_groups(&pool, &[], false)
+                .await
+                .expect("no group")
+                .is_empty()
+        );
+        assert_eq!(
+            names(
+                CachedForm::get_form_defs_for_groups(&pool, &[], true)
+                    .await
+                    .expect("only ungrouped")
+            ),
+            vec!["F3"]
+        );
     }
 
     #[tokio::test]
